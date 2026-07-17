@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
+  .field { margin-bottom: 16px; }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  input[type="text"], input[type="email"], input[type="password"] {
+    width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #999; border-radius: 4px;
+  }
+  input[aria-invalid="true"] { border-color: #c0392b; }
+  .error { color: #c0392b; font-size: 0.875rem; display: block; margin-top: 4px; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; }
+  #status { color: #1e7e34; font-weight: 600; min-height: 1.2em; margin: 12px 0; }
+  button { padding: 8px 20px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <!--
+    ROUND 2 — output of a precise prompt: exact file structure, field-by-field
+    rules, explicit edge cases, an accessibility requirement, and a mandatory
+    "write it, then write tests and run them" verification step.
+    Full prompt text is in PROMPT_USED.md. Validation was written and tested
+    separately (22/22 passing) before being placed here.
+  -->
+
+  <form id="settingsForm" novalidate>
+    <h2>Settings</h2>
+
+    <div class="field">
+      <label for="name">Name</label>
+      <input id="name" name="name" />
+      <span id="name-error" class="error" role="alert"></span>
+    </div>
+
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" />
+      <span id="email-error" class="error" role="alert"></span>
+    </div>
+
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" />
+      <span id="password-error" class="error" role="alert"></span>
+    </div>
+
+    <div class="field">
+      <label for="confirmPassword">Confirm Password</label>
+      <input id="confirmPassword" name="confirmPassword" type="password" />
+      <span id="confirmPassword-error" class="error" role="alert"></span>
+    </div>
+
+    <div class="field checkbox-row">
+      <input id="notifications" name="notifications" type="checkbox" />
+      <label for="notifications" style="margin:0;">Enable notifications</label>
+    </div>
+
+    <div id="status" role="status"></div>
+
+    <button type="submit">Save</button>
+  </form>
+
+  <script>
+    // ---- Validation module (pure functions, no DOM access) ----
+
+    function validateName(rawName) {
+      var name = String(rawName == null ? "" : rawName);
+      var trimmed = name.trim();
+      if (trimmed.length === 0) return "Name is required.";
+      if (trimmed.length < 2 || trimmed.length > 50) return "Name must be between 2 and 50 characters.";
+      return null;
+    }
+
+    function validateEmail(rawEmail) {
+      var email = String(rawEmail == null ? "" : rawEmail).trim();
+      if (email.length === 0) return "Email is required.";
+      if (/\s/.test(email)) return "Email cannot contain spaces.";
+      if (email.indexOf("..") !== -1) return "Email cannot contain consecutive dots.";
+
+      var parts = email.split("@");
+      if (parts.length !== 2) return "Email must contain exactly one @.";
+
+      var local = parts[0];
+      var domain = parts[1];
+      if (local.length === 0 || local.charAt(0) === "." || local.charAt(local.length - 1) === ".") {
+        return "Invalid email address.";
+      }
+
+      var domainLabels = domain.split(".");
+      if (domainLabels.length < 2) return "Email domain must include a top-level domain (e.g. .com).";
+      for (var i = 0; i < domainLabels.length; i++) {
+        if (domainLabels[i].length === 0) return "Invalid email domain.";
+      }
+
+      var tld = domainLabels[domainLabels.length - 1];
+      if (tld.length < 2 || !/^[a-zA-Z]+$/.test(tld)) return "Email top-level domain must be at least 2 letters.";
+
+      return null;
+    }
+
+    function validatePassword(rawPassword) {
+      var password = String(rawPassword == null ? "" : rawPassword);
+      if (password.length === 0) return "Password is required.";
+      if (password.length < 8) return "Password must be at least 8 characters.";
+      if (!/[A-Za-z]/.test(password)) return "Password must contain at least one letter.";
+      if (!/\d/.test(password)) return "Password must contain at least one number.";
+      return null;
+    }
+
+    function validateConfirmPassword(password, confirm) {
+      if (String(confirm == null ? "" : confirm).length === 0) return "Please confirm your password.";
+      if (password !== confirm) return "Passwords do not match.";
+      return null;
+    }
+
+    function validateForm(fields) {
+      return {
+        name: validateName(fields.name),
+        email: validateEmail(fields.email),
+        password: validatePassword(fields.password),
+        confirmPassword: validateConfirmPassword(fields.password, fields.confirmPassword),
+      };
+    }
+
+    function isFormValid(errors) {
+      for (var key in errors) {
+        if (errors[key] !== null) return false;
+      }
+      return true;
+    }
+
+    // ---- Form wiring ----
+
+    var form = document.getElementById("settingsForm");
+    var fieldIds = ["name", "email", "password", "confirmPassword"];
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      var values = {
+        name: document.getElementById("name").value,
+        email: document.getElementById("email").value,
+        password: document.getElementById("password").value,
+        confirmPassword: document.getElementById("confirmPassword").value,
+      };
+
+      var errors = validateForm(values);
+      var statusEl = document.getElementById("status");
+      var firstInvalidId = null;
+
+      fieldIds.forEach(function (id) {
+        var input = document.getElementById(id);
+        var errorEl = document.getElementById(id + "-error");
+        var message = errors[id];
+
+        if (message) {
+          input.setAttribute("aria-invalid", "true");
+          input.setAttribute("aria-describedby", id + "-error");
+          errorEl.textContent = message;
+          if (!firstInvalidId) firstInvalidId = id;
+        } else {
+          input.setAttribute("aria-invalid", "false");
+          input.removeAttribute("aria-describedby");
+          errorEl.textContent = "";
+        }
+      });
+
+      if (firstInvalidId) {
+        document.getElementById(firstInvalidId).focus();
+        statusEl.textContent = "";
+        return;
+      }
+
+      statusEl.textContent = "Settings saved!";
+    });
+  </script>
+</body>
+</html>
